@@ -7,12 +7,18 @@ import { supabaseAdmin, isSupabaseConfigured } from './supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.VERCEL 
+  ? path.join('/tmp', 'contentpilot_data') 
+  : path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'contentpilot.json');
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data directory exists with serverless fallback
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn('[DB] Read-only filesystem detected, operating in memory:', dirErr.message);
 }
 
 // Initial Seed Data generator

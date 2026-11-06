@@ -114,7 +114,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`\n=================================================`);
     console.log(`🚀 ContentPilot AI Backend Server running on port ${PORT}`);
