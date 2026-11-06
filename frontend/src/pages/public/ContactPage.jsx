@@ -90,9 +90,9 @@ export const ContactPage = () => {
             </div>
           )}
 
-          {error && (
+          {Boolean(error) && (
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
-              {error}
+              {typeof error === 'string' ? error : (error?.message || error?.code || JSON.stringify(error))}
             </div>
           )}
 

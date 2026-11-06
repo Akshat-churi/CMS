@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { Compass, Mail, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { formatErrorMessage } from '../../utils/formatError';
 
 export const ForgotPasswordPage = () => {
   const [email, setEmail] = useState('');
@@ -19,7 +20,7 @@ export const ForgotPasswordPage = () => {
       const res = await api.post('/auth/forgot-password', { email });
       setMessage(res.data.message || 'Password reset link sent to your email.');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to submit password reset request.');
+      setError(formatErrorMessage(err, 'Failed to submit password reset request.'));
     } finally {
       setLoading(false);
     }
@@ -46,10 +47,10 @@ export const ForgotPasswordPage = () => {
           </div>
         )}
 
-        {error && (
+        {Boolean(error) && (
           <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+            <span>{typeof error === 'string' ? error : formatErrorMessage(error)}</span>
           </div>
         )}
 

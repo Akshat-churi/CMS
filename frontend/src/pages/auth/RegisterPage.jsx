@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Compass, UserPlus, Lock, Mail, User, AlertCircle, Info } from 'lucide-react';
+import { formatErrorMessage } from '../../utils/formatError';
 
 export const RegisterPage = () => {
   const [fullName, setFullName] = useState('');
@@ -34,7 +35,7 @@ export const RegisterPage = () => {
       await register(fullName, email, password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Registration failed.');
+      setError(formatErrorMessage(err, 'Registration failed.'));
     } finally {
       setLoading(false);
     }
@@ -65,10 +66,10 @@ export const RegisterPage = () => {
         </div>
 
         {/* Error Alert */}
-        {error && (
+        {Boolean(error) && (
           <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+            <span>{typeof error === 'string' ? error : formatErrorMessage(error)}</span>
           </div>
         )}
 

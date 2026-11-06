@@ -105,10 +105,10 @@ export const MediaPickerModal = ({ isOpen, onClose, onSelect }) => {
         </div>
 
         {/* Error alert */}
-        {error && (
+        {Boolean(error) && (
           <div className="mx-6 mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+            <span>{typeof error === 'string' ? error : (error?.message || error?.code || JSON.stringify(error))}</span>
           </div>
         )}
 
