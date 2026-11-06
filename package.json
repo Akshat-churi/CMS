@@ -1,0 +1,29 @@
+{
+  "name": "contentpilot-cms",
+  "version": "1.0.0",
+  "description": "ContentPilot AI - Modern Full-Stack Content Management System (Phase 1: Complete CMS)",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --handle-input false -n \"BACKEND,FRONTEND\" -c \"blue,magenta\" \"node backend/server.js\" \"npm run dev --prefix frontend\"",
+    "start": "node backend/server.js",
+    "dev:backend": "node backend/server.js",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "test:phase1": "node backend/tests/test-phase1.js",
+    "test:phase2": "node backend/tests/test-phase2.js",
+    "test": "node backend/tests/test-phase1.js && node backend/tests/test-phase2.js"
+  },
+  "keywords": [
+    "cms",
+    "content-management-system",
+    "supabase",
+    "react",
+    "express",
+    "rbac"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

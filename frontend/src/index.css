@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased min-h-screen selection:bg-indigo-600 selection:text-white font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight text-slate-900;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Editorial Magazine Typography Styles */
+.editorial-prose {
+  @apply text-slate-700 leading-relaxed text-lg;
+}
+
+.editorial-prose p {
+  @apply mb-6 text-slate-700 leading-relaxed;
+}
+
+.editorial-prose h2 {
+  @apply text-2xl sm:text-3xl font-extrabold text-slate-900 mt-12 mb-5 tracking-tight border-b border-slate-100 pb-3;
+}
+
+.editorial-prose h3 {
+  @apply text-xl sm:text-2xl font-bold text-slate-900 mt-8 mb-4 tracking-tight;
+}
+
+.editorial-prose h4 {
+  @apply text-lg font-bold text-slate-900 mt-6 mb-3;
+}
+
+.editorial-prose ul {
+  @apply list-disc list-outside pl-6 mb-6 space-y-2 text-slate-700;
+}
+
+.editorial-prose ol {
+  @apply list-decimal list-outside pl-6 mb-6 space-y-2 text-slate-700;
+}
+
+.editorial-prose li {
+  @apply pl-1;
+}
+
+.editorial-prose blockquote {
+  @apply border-l-4 border-indigo-600 pl-6 py-2 my-8 italic text-xl text-slate-800 bg-indigo-50/40 rounded-r-2xl;
+}
+
+.editorial-prose pre {
+  @apply bg-slate-950 text-slate-100 p-5 rounded-2xl overflow-x-auto text-sm font-mono my-6 border border-slate-800 shadow-md;
+}
+
+.editorial-prose code {
+  @apply bg-slate-100 text-indigo-700 px-1.5 py-0.5 rounded text-sm font-mono font-medium;
+}
+
+.editorial-prose pre code {
+  @apply bg-transparent text-slate-100 p-0 text-sm;
+}
+
+.editorial-prose a {
+  @apply text-indigo-600 font-semibold underline decoration-indigo-300 underline-offset-4 hover:text-indigo-800 hover:decoration-indigo-600 transition-all;
+}
+
+.editorial-prose img {
+  @apply rounded-3xl my-8 shadow-md border border-slate-200/60 w-full object-cover;
+}
+
+/* Drop-cap for lead article paragraphs */
+.drop-cap::first-letter {
+  @apply float-left text-5xl font-black text-slate-900 pr-3 pt-1 leading-none font-serif;
+}
