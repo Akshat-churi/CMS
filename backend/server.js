@@ -43,7 +43,7 @@ const uploadsPath = path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsPath));
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'online',
     system: 'ContentPilot AI - Phase 2 AI Integrated CMS',
@@ -54,18 +54,18 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/contents', contentRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/media', mediaRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/activity-logs', activityRoutes);
-app.use('/api/stats', statsRoutes);
-app.use('/api/ai', aiRoutes);
+// API Routes - Support both with and without /api prefix for seamless Vercel / serverless routing
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/contents', '/contents'], contentRoutes);
+app.use(['/api/categories', '/categories'], categoryRoutes);
+app.use(['/api/media', '/media'], mediaRoutes);
+app.use(['/api/users', '/users'], userRoutes);
+app.use(['/api/activity-logs', '/activity-logs'], activityRoutes);
+app.use(['/api/stats', '/stats'], statsRoutes);
+app.use(['/api/ai', '/ai'], aiRoutes);
 
 // Public Contact Form Submission Endpoint
-app.post('/api/contact', async (req, res) => {
+app.post(['/api/contact', '/contact'], async (req, res) => {
   try {
     const { name, email, subject, message } = req.body;
     if (!name || !email || !message) {

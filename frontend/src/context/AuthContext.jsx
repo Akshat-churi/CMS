@@ -5,8 +5,14 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('cp_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('cp_user');
+      if (!saved || saved === 'undefined' || saved === 'null') return null;
+      return JSON.parse(saved);
+    } catch (e) {
+      localStorage.removeItem('cp_user');
+      return null;
+    }
   });
   const [token, setToken] = useState(() => localStorage.getItem('cp_token'));
   const [loading, setLoading] = useState(true);
@@ -25,8 +31,10 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem('cp_user', JSON.stringify(res.data.user));
         }
       } catch (err) {
-        console.warn('Session verification failed:', err.message);
-        logout();
+        console.warn('Session verification note:', err.message);
+        if (err.response?.status === 401) {
+          logout();
+        }
       } finally {
         setLoading(false);
       }
@@ -39,11 +47,13 @@ export const AuthProvider = ({ children }) => {
     const res = await api.post('/auth/login', { email, password });
     if (res.data.success) {
       const { user: userData, token: userToken } = res.data;
-      setUser(userData);
-      setToken(userToken);
-      localStorage.setItem('cp_user', JSON.stringify(userData));
-      localStorage.setItem('cp_token', userToken);
-      return userData;
+      if (userData && userToken) {
+        setUser(userData);
+        setToken(userToken);
+        localStorage.setItem('cp_user', JSON.stringify(userData));
+        localStorage.setItem('cp_token', userToken);
+        return userData;
+      }
     }
     throw new Error(res.data.error || 'Login failed');
   };
