@@ -5,15 +5,17 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. PROFILES TABLE (Linked with Supabase auth.users)
+-- 1. PROFILES TABLE (Linked with Supabase auth.users or direct profiles)
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
     role TEXT NOT NULL DEFAULT 'author' CHECK (role IN ('admin', 'editor', 'author')),
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 -- 2. CATEGORIES TABLE
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -293,11 +295,107 @@ CREATE POLICY "Uploaders and Admins can delete media files"
 -- ==============================================================================
 -- INITIAL SEED DATA
 -- ==============================================================================
-INSERT INTO public.categories (name, slug, description)
+INSERT INTO public.profiles (id, full_name, email, password_hash, role, is_active)
 VALUES 
-    ('Technology & AI', 'technology-ai', 'Latest trends in software, computing, and machine learning.'),
-    ('Product & Design', 'product-design', 'Insights on UI/UX, product strategies, and human-centered design.'),
-    ('Business & Startups', 'business-startups', 'Company building, growth, leadership, and operational scale.'),
-    ('Community & Events', 'community-events', 'Conferences, workshops, hackathons, and company announcements.')
+    ('11111111-1111-4111-8111-111111111111', 'Administrator', 'admin@contentpilot.ai', '$2a$10$P85NqYj31zZkVxH5aHwHeeQ5B.3G/p55l1oBwKkC5kP8B7vBwPj.m', 'admin', true),
+    ('22222222-2222-4222-8222-222222222222', 'Senior Editor', 'editor@contentpilot.ai', '$2a$10$wE9w2QvL3jK5hD7aZ1kK.eB5b5gZ5l1oBwKkC5kP8B7vBwPj.m', 'editor', true),
+    ('33333333-3333-4333-8333-333333333333', 'Staff Author', 'author@contentpilot.ai', '$2a$10$qR7t6Y5u4I3o2P1aZ9kK.eB5b5gZ5l1oBwKkC5kP8B7vBwPj.m', 'author', true)
+ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role;
+
+INSERT INTO public.categories (id, name, slug, description)
+VALUES 
+    ('c1111111-1111-4111-8111-111111111111', 'Technology & AI', 'technology-ai', 'Latest trends in software, computing, and machine learning.'),
+    ('c2222222-2222-4222-8222-222222222222', 'Product & Design', 'product-design', 'Insights on UI/UX, product strategies, and human-centered design.'),
+    ('c3333333-3333-4333-8333-333333333333', 'Business & Startups', 'business-startups', 'Company building, growth, leadership, and operational scale.'),
+    ('c4444444-4444-4444-8444-444444444444', 'Community & Events', 'community-events', 'Conferences, workshops, hackathons, and company announcements.')
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO public.contents (id, title, slug, description, body, content_type, featured_image, author_id, category_id, tags, status, seo_title, meta_description, keywords, published_at)
+VALUES
+    (
+        'a1111111-1111-4111-8111-111111111111',
+        'Architecting High-Throughput Modern CMS with Node.js and Supabase',
+        'architecting-high-throughput-modern-cms',
+        'A deep architectural dive into decoupled content delivery, row-level security, and role-based workflows.',
+        '<h2>Introduction to Modern CMS Architecture</h2><p>Modern editorial teams require speed, rock-solid security, and flawless collaborative workflows. In this article, we dissect how <strong>ContentPilot AI</strong> combines the power of Express, Supabase PostgreSQL, and React to deliver a dependable CMS without unnecessary external dependencies.</p><h3>Why Decoupled Content Delivery Wins</h3><p>By separating the public content rendering layer from administrative editing, systems gain resilience against traffic spikes. Supabase provides granular Row Level Security (RLS) guaranteeing that drafts and rejected submissions never leak to unauthorized viewers.</p><h3>Role-Based Access Control in Practice</h3><ul><li><strong>Authors:</strong> Draft and submit compelling content for editorial review.</li><li><strong>Editors:</strong> Review, refine, approve, and publish content.</li><li><strong>Administrators:</strong> Govern users, taxonomies, and system integrity.</li></ul><p>ContentPilot exemplifies these architectural patterns cleanly and reliably.</p>',
+        'article',
+        'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80',
+        '33333333-3333-4333-8333-333333333333',
+        'c1111111-1111-4111-8111-111111111111',
+        ARRAY['Architecture', 'Node.js', 'Supabase', 'Engineering'],
+        'published',
+        'Architecting High-Throughput Modern CMS | ContentPilot AI',
+        'Discover how modern CMS architectures leverage Supabase PostgreSQL, RLS, and Express to ensure resilience and editorial excellence.',
+        'CMS, Supabase, Node.js, Web Architecture, PostgreSQL',
+        now()
+    ),
+    (
+        'a2222222-2222-4222-8222-222222222222',
+        'Design Systems for Editorial Teams: Balancing Brand Consistency and Flexibility',
+        'design-systems-for-editorial-teams',
+        'How modern media organizations establish typography, responsive hierarchy, and high visual standards.',
+        '<h2>The Need for Editorial Discipline</h2><p>Design systems are not merely component libraries; they embody an organization editorial philosophy. When authors and editors collaborate under high velocity, having standardized modular components preserves trust and readability.</p><h3>Readability and Responsive Typographic Hierarchy</h3><p>Good typography respects readers across devices. Fluid scaling, optimal line heights, and clear contrast ratios ensure that complex articles remain accessible and engaging.</p>',
+        'article',
+        'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=1200&q=80',
+        '22222222-2222-4222-8222-222222222222',
+        'c2222222-2222-4222-8222-222222222222',
+        ARRAY['Design Systems', 'UI/UX', 'Typography', 'Branding'],
+        'published',
+        'Design Systems for Editorial Teams | ContentPilot AI',
+        'Learn how to build editorial design systems that balance visual consistency with writer flexibility.',
+        'Design Systems, Editorial, Typography, UI/UX',
+        now()
+    ),
+    (
+        'n1111111-1111-4111-8111-111111111111',
+        'ContentPilot AI Version 1.0 Launched for Enterprise Editorial Workflows',
+        'contentpilot-ai-version-1-launched',
+        'ContentPilot launches its robust Phase 1 core CMS featuring dynamic multi-role publishing and media governance.',
+        '<h2>Announcing ContentPilot AI 1.0</h2><p>Today marks the official release of ContentPilot AI comprehensive CMS core. Built strictly to deliver maximum uptime and security, the system provides full CRUD capabilities, audit logging, and role-based permissions.</p><p>Key Highlights:</p><ul><li>Complete separation of editorial drafts and public content.</li><li>Instant preview and full revision history tracking.</li><li>Responsive reader experience across mobile, tablet, and desktop.</li></ul>',
+        'news',
+        'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
+        '11111111-1111-4111-8111-111111111111',
+        'c1111111-1111-4111-8111-111111111111',
+        ARRAY['Release', 'CMS', 'News', 'ContentPilot'],
+        'published',
+        'ContentPilot AI Version 1.0 Launched | News',
+        'Read the official release announcement of ContentPilot AI 1.0 featuring multi-role workflows.',
+        'News, Release, ContentPilot, Enterprise',
+        now()
+    ),
+    (
+        'm1111111-1111-4111-8111-111111111111',
+        'Scheduled System Maintenance: Database Performance Optimization',
+        'scheduled-system-maintenance-february',
+        'Notice regarding upcoming infrastructure scaling and database indexing maintenance window.',
+        '<h2>Scheduled Infrastructure Maintenance Notice</h2><p>Please be advised that on Saturday evening at 02:00 UTC, the ContentPilot core database will undergo scheduled indexing and routine performance tuning.</p><p><strong>Expected Downtime:</strong> Under 5 minutes. The public website will remain accessible via edge caching.</p>',
+        'announcement',
+        'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
+        '11111111-1111-4111-8111-111111111111',
+        'c3333333-3333-4333-8333-333333333333',
+        ARRAY['Maintenance', 'System Update', 'Notice'],
+        'published',
+        'Scheduled System Maintenance Notice | ContentPilot AI',
+        'Notice regarding upcoming routine maintenance for database optimization.',
+        'Maintenance, Announcement, Infrastructure',
+        now()
+    ),
+    (
+        'e1111111-1111-4111-8111-111111111111',
+        'Global Tech & Publishing Summit 2026',
+        'global-tech-and-publishing-summit-2026',
+        'Join industry pioneers, journalists, and engineers for a 2-day conference on future-ready digital publishing.',
+        '<h2>About the Global Summit</h2><p>The Global Tech & Publishing Summit brings together over 5,000 digital creators, editorial directors, and platform architects. Experience keynote discussions on ethical journalism, decoupled web platforms, and automated workflow pipelines.</p><h3>Event Schedule & Highlights</h3><ul><li><strong>Day 1:</strong> Keynote on Modern CMS Architecture, Panel on Content Governance.</li><li><strong>Day 2:</strong> Technical Workshops on Supabase, React, and Performance Audits.</li></ul><p><strong>Location:</strong> San Francisco Convention Center & Virtual Livestream.<br/><strong>Date:</strong> November 18-19, 2026.</p>',
+        'event',
+        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+        '22222222-2222-4222-8222-222222222222',
+        'c4444444-4444-4444-8444-444444444444',
+        ARRAY['Conference', 'Summit', 'Community', 'Publishing'],
+        'published',
+        'Global Tech & Publishing Summit 2026 | Events',
+        'Register for the premier annual conference on digital publishing, web engineering, and content strategy.',
+        'Summit, Conference, Event, Web Tech',
+        now()
+    )
 ON CONFLICT (slug) DO NOTHING;
 

@@ -251,6 +251,11 @@ class DatabaseManager {
       this.memoryData = getInitialSeed();
       this.save();
     }
+
+    // Try seeding remote Supabase if tables exist but are empty
+    if (isSupabaseConfigured && supabaseAdmin) {
+      this.seedSupabaseIfEmpty().catch(() => {});
+    }
   }
 
   save() {
@@ -261,12 +266,118 @@ class DatabaseManager {
     }
   }
 
+  async seedSupabaseIfEmpty() {
+    if (!isSupabaseConfigured || !supabaseAdmin) return;
+    try {
+      // 1. Check profiles
+      const { data: profs, error: profErr } = await supabaseAdmin.from('profiles').select('id').limit(1);
+      if (!profErr && profs && profs.length === 0) {
+        console.log('[Supabase] Remote profiles table is empty. Seeding initial accounts...');
+        for (const p of this.memoryData.profiles) {
+          await supabaseAdmin.from('profiles').upsert({
+            id: p.id,
+            full_name: p.full_name,
+            email: p.email.toLowerCase().trim(),
+            password_hash: p.password_hash,
+            role: p.role,
+            is_active: p.is_active
+          }, { onConflict: 'id' });
+        }
+      }
+
+      // 2. Check categories
+      const { data: cats, error: catErr } = await supabaseAdmin.from('categories').select('id').limit(1);
+      if (!catErr && cats && cats.length === 0) {
+        console.log('[Supabase] Remote categories table is empty. Seeding default categories...');
+        for (const c of this.memoryData.categories) {
+          await supabaseAdmin.from('categories').upsert({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            description: c.description || ''
+          }, { onConflict: 'id' });
+        }
+      }
+
+      // 3. Check contents
+      const { data: cnts, error: cntErr } = await supabaseAdmin.from('contents').select('id').limit(1);
+      if (!cntErr && cnts && cnts.length === 0) {
+        console.log('[Supabase] Remote contents table is empty. Seeding default articles...');
+        for (const c of this.memoryData.contents) {
+          await supabaseAdmin.from('contents').upsert({
+            id: c.id,
+            title: c.title,
+            slug: c.slug,
+            description: c.description || '',
+            body: c.body || '',
+            content_type: c.content_type || 'article',
+            featured_image: c.featured_image || null,
+            author_id: c.author_id,
+            category_id: c.category_id || null,
+            tags: Array.isArray(c.tags) ? c.tags : [],
+            status: c.status || 'published',
+            rejection_reason: c.rejection_reason || null,
+            seo_title: c.seo_title || c.title,
+            meta_description: c.meta_description || c.description || '',
+            keywords: c.keywords || '',
+            published_at: c.published_at || new Date().toISOString(),
+            created_at: c.created_at || new Date().toISOString(),
+            updated_at: c.updated_at || new Date().toISOString()
+          }, { onConflict: 'id' });
+        }
+      }
+    } catch (e) {
+      // Ignored if schema not executed yet
+    }
+  }
+
+  // Pre-sync foreign key dependencies to ensure foreign keys never fail
+  async ensureProfileInSupabase(userOrId) {
+    if (!isSupabaseConfigured || !supabaseAdmin || !userOrId) return;
+    try {
+      const id = typeof userOrId === 'string' ? userOrId : userOrId.id;
+      if (!id) return;
+      const local = this.memoryData.profiles.find(p => p.id === id);
+      if (!local) return;
+      await supabaseAdmin.from('profiles').upsert({
+        id: local.id,
+        full_name: local.full_name,
+        email: local.email.toLowerCase().trim(),
+        password_hash: local.password_hash,
+        role: local.role,
+        is_active: local.is_active
+      }, { onConflict: 'id' });
+    } catch (e) {}
+  }
+
+  async ensureCategoryInSupabase(catId) {
+    if (!isSupabaseConfigured || !supabaseAdmin || !catId) return;
+    try {
+      const local = this.memoryData.categories.find(c => c.id === catId);
+      if (!local) return;
+      await supabaseAdmin.from('categories').upsert({
+        id: local.id,
+        name: local.name,
+        slug: local.slug,
+        description: local.description || ''
+      }, { onConflict: 'id' });
+    } catch (e) {}
+  }
+
   // --- PROFILES ---
   async getProfileById(id) {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from('profiles').select('*').eq('id', id).single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const idx = this.memoryData.profiles.findIndex(p => p.id === id);
+          if (idx !== -1) {
+            this.memoryData.profiles[idx] = { ...this.memoryData.profiles[idx], ...data };
+          } else {
+            this.memoryData.profiles.push(data);
+          }
+          return data;
+        }
       } catch (e) {}
     }
     return this.memoryData.profiles.find(p => p.id === id) || null;
@@ -277,13 +388,48 @@ class DatabaseManager {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from('profiles').select('*').eq('email', cleanEmail).single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const idx = this.memoryData.profiles.findIndex(p => p.email.toLowerCase() === cleanEmail);
+          if (idx !== -1) {
+            this.memoryData.profiles[idx] = { ...this.memoryData.profiles[idx], ...data };
+          } else {
+            this.memoryData.profiles.push(data);
+          }
+          return data;
+        }
       } catch (e) {}
     }
     return this.memoryData.profiles.find(p => p.email.toLowerCase() === cleanEmail) || null;
   }
 
   async getAllProfiles({ search, role, page = 1, limit = 50 } = {}) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin.from('profiles').select('*', { count: 'exact' });
+        if (role && role !== 'all') {
+          query = query.eq('role', role);
+        }
+        if (search) {
+          const q = search.trim();
+          query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
+        }
+        query = query.order('created_at', { ascending: false });
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
+
+        const { data, count, error } = await query;
+        if (!error && data) {
+          const paginated = data.map(p => {
+            const { password_hash, ...safe } = p;
+            return safe;
+          });
+          const total = typeof count === 'number' ? count : paginated.length;
+          return { profiles: paginated, total };
+        }
+      } catch (e) {}
+    }
+
     let list = [...this.memoryData.profiles];
     if (search) {
       const q = search.toLowerCase();
@@ -328,6 +474,7 @@ class DatabaseManager {
           id: newId,
           full_name,
           email: cleanEmail,
+          password_hash,
           role,
           is_active
         }]);
@@ -344,35 +491,70 @@ class DatabaseManager {
   }
 
   async updateProfile(id, updates) {
-    const profile = this.memoryData.profiles.find(p => p.id === id);
+    const profile = await this.getProfileById(id);
     if (!profile) throw new Error('User profile not found.');
 
     // Protect last active administrator check
-    if (profile.role === 'admin' && (updates.role && updates.role !== 'admin' || updates.is_active === false)) {
+    if (profile.role === 'admin' && ((updates.role && updates.role !== 'admin') || updates.is_active === false)) {
       const activeAdmins = this.memoryData.profiles.filter(p => p.role === 'admin' && p.is_active === true && p.id !== id);
       if (activeAdmins.length === 0) {
         throw new Error('Operation aborted: You cannot demote or deactivate the last remaining active administrator.');
       }
     }
 
-    Object.assign(profile, updates);
-
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        await supabaseAdmin.from('profiles').update(updates).eq('id', id);
+        const { password, ...safeUpdates } = updates;
+        if (password) {
+          safeUpdates.password_hash = bcrypt.hashSync(password, 10);
+        }
+        await supabaseAdmin.from('profiles').update(safeUpdates).eq('id', id);
       } catch (e) {
         console.warn('[Supabase] Profile update sync note:', e.message);
       }
     }
 
+    const memProfile = this.memoryData.profiles.find(p => p.id === id);
+    if (memProfile) {
+      Object.assign(memProfile, updates);
+      if (updates.password) {
+        memProfile.password_hash = bcrypt.hashSync(updates.password, 10);
+      }
+    }
     this.save();
-    const { password_hash, ...safe } = profile;
+    const { password_hash, ...safe } = memProfile || { ...profile, ...updates };
     return safe;
   }
 
   // --- CATEGORIES ---
   async getAllCategories() {
-    // Enrich with count of published posts
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data: categories, error } = await supabaseAdmin.from('categories').select('*').order('name');
+        if (!error && categories) {
+          const { data: contentsData } = await supabaseAdmin.from('contents').select('category_id').eq('status', 'published');
+          const counts = {};
+          if (contentsData) {
+            for (const row of contentsData) {
+              if (row.category_id) counts[row.category_id] = (counts[row.category_id] || 0) + 1;
+            }
+          }
+          for (const cat of categories) {
+            const idx = this.memoryData.categories.findIndex(c => c.id === cat.id);
+            if (idx !== -1) {
+              this.memoryData.categories[idx] = { ...this.memoryData.categories[idx], ...cat };
+            } else {
+              this.memoryData.categories.push(cat);
+            }
+          }
+          return categories.map(c => ({
+            ...c,
+            content_count: counts[c.id] || 0
+          }));
+        }
+      } catch (e) {}
+    }
+
     const counts = {};
     for (const content of this.memoryData.contents) {
       if (content.category_id && content.status === 'published') {
@@ -386,10 +568,22 @@ class DatabaseManager {
   }
 
   async getCategoryById(id) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('categories').select('*').eq('id', id).single();
+        if (!error && data) return data;
+      } catch (e) {}
+    }
     return this.memoryData.categories.find(c => c.id === id) || null;
   }
 
   async getCategoryBySlug(slug) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('categories').select('*').eq('slug', slug).single();
+        if (!error && data) return data;
+      } catch (e) {}
+    }
     return this.memoryData.categories.find(c => c.slug === slug) || null;
   }
 
@@ -405,41 +599,159 @@ class DatabaseManager {
       description: description || '',
       created_at: new Date().toISOString()
     };
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('categories').insert([cat]);
+      } catch (e) {
+        console.warn('[Supabase] Warning inserting category:', e.message);
+      }
+    }
+
     this.memoryData.categories.push(cat);
     this.save();
     return cat;
   }
 
   async updateCategory(id, { name, slug, description }) {
-    const cat = this.memoryData.categories.find(c => c.id === id);
+    const cat = await this.getCategoryById(id);
     if (!cat) throw new Error('Category not found.');
     if (slug && slug !== cat.slug) {
       const duplicate = this.memoryData.categories.find(c => c.slug === slug && c.id !== id);
       if (duplicate) throw new Error('A category with this slug already exists.');
     }
-    if (name) cat.name = name;
-    if (slug) cat.slug = slug;
-    if (description !== undefined) cat.description = description;
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (slug) updates.slug = slug;
+    if (description !== undefined) updates.description = description;
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('categories').update(updates).eq('id', id);
+      } catch (e) {
+        console.warn('[Supabase] Category update sync note:', e.message);
+      }
+    }
+
+    const memCat = this.memoryData.categories.find(c => c.id === id);
+    if (memCat) Object.assign(memCat, updates);
+    this.save();
+    return memCat || { ...cat, ...updates };
+  }
+
+  async deleteCategory(id) {
+    const cat = await this.getCategoryById(id);
+    if (!cat) throw new Error('Category not found.');
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('contents').update({ category_id: null }).eq('category_id', id);
+        await supabaseAdmin.from('categories').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[Supabase] Category delete sync note:', e.message);
+      }
+    }
+
+    this.memoryData.contents.forEach(c => {
+      if (c.category_id === id) c.category_id = null;
+    });
+    const index = this.memoryData.categories.findIndex(c => c.id === id);
+    if (index !== -1) {
+      this.memoryData.categories.splice(index, 1);
+    }
     this.save();
     return cat;
   }
 
-  async deleteCategory(id) {
-    const index = this.memoryData.categories.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Category not found.');
-    // Unlink from contents
-    this.memoryData.contents.forEach(c => {
-      if (c.category_id === id) c.category_id = null;
-    });
-    const [deleted] = this.memoryData.categories.splice(index, 1);
-    this.save();
-    return deleted;
+  // --- CONTENTS POPULATION ---
+  populateContent(content) {
+    if (!content) return null;
+    const author = this.memoryData.profiles.find(p => p.id === content.author_id);
+    const category = this.memoryData.categories.find(c => c.id === content.category_id);
+    return {
+      ...content,
+      author: author 
+        ? { id: author.id, full_name: author.full_name, email: author.email, role: author.role } 
+        : (content.author || null),
+      category: category 
+        ? { id: category.id, name: category.name, slug: category.slug } 
+        : (content.category || null)
+    };
+  }
+
+  async populateContentAsync(content) {
+    if (!content) return null;
+    let author = this.memoryData.profiles.find(p => p.id === content.author_id);
+    if (!author && isSupabaseConfigured && supabaseAdmin && content.author_id) {
+      try {
+        const { data, error } = await supabaseAdmin.from('profiles').select('id, full_name, email, role').eq('id', content.author_id).single();
+        if (!error && data) {
+          author = data;
+          if (!this.memoryData.profiles.some(p => p.id === data.id)) {
+            this.memoryData.profiles.push(data);
+          }
+        }
+      } catch (e) {}
+    }
+
+    let category = this.memoryData.categories.find(c => c.id === content.category_id);
+    if (!category && isSupabaseConfigured && supabaseAdmin && content.category_id) {
+      try {
+        const { data, error } = await supabaseAdmin.from('categories').select('id, name, slug').eq('id', content.category_id).single();
+        if (!error && data) {
+          category = data;
+          if (!this.memoryData.categories.some(c => c.id === data.id)) {
+            this.memoryData.categories.push(data);
+          }
+        }
+      } catch (e) {}
+    }
+
+    return {
+      ...content,
+      author: author 
+        ? { id: author.id, full_name: author.full_name, email: author.email, role: author.role } 
+        : (content.author || null),
+      category: category 
+        ? { id: category.id, name: category.name, slug: category.slug } 
+        : (content.category || null)
+    };
   }
 
   // --- CONTENTS ---
   async getPublishedContents({ type, categoryId, search, tag, page = 1, limit = 10, sort = 'newest' } = {}) {
-    let list = this.memoryData.contents.filter(c => c.status === 'published');
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin.from('contents').select('*', { count: 'exact' }).eq('status', 'published');
+        if (type && type !== 'all') {
+          query = query.eq('content_type', type);
+        }
+        if (categoryId && categoryId !== 'all') {
+          query = query.eq('category_id', categoryId);
+        }
+        if (tag) {
+          query = query.contains('tags', [tag]);
+        }
+        if (search) {
+          const q = search.trim();
+          query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,body.ilike.%${q}%`);
+        }
+        query = query.order('published_at', { ascending: sort === 'oldest' });
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
 
+        const { data, count, error } = await query;
+        if (!error && data) {
+          const items = await Promise.all(data.map(c => this.populateContentAsync(c)));
+          const total = typeof count === 'number' ? count : items.length;
+          return { contents: items, total, totalPages: Math.ceil(total / limit) || 1, page };
+        }
+      } catch (e) {}
+    }
+
+    let list = this.memoryData.contents.filter(c => c.status === 'published');
     if (type && type !== 'all') {
       list = list.filter(c => c.content_type === type);
     }
@@ -459,7 +771,6 @@ class DatabaseManager {
       );
     }
 
-    // Sort
     list.sort((a, b) => {
       const dateA = new Date(a.published_at || a.created_at).getTime();
       const dateB = new Date(b.published_at || b.created_at).getTime();
@@ -469,17 +780,47 @@ class DatabaseManager {
     const total = list.length;
     const start = (page - 1) * limit;
     const items = list.slice(start, start + limit).map(c => this.populateContent(c));
-    return { contents: items, total, totalPages: Math.ceil(total / limit), page };
+    return { contents: items, total, totalPages: Math.ceil(total / limit) || 1, page };
   }
 
   async getContentsForManagement({ status, type, categoryId, search, user, page = 1, limit = 20 } = {}) {
-    let list = [...this.memoryData.contents];
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin.from('contents').select('*', { count: 'exact' });
+        if (user.role === 'author') {
+          query = query.eq('author_id', user.id);
+        }
+        if (status && status !== 'all') {
+          query = query.eq('status', status);
+        }
+        if (type && type !== 'all') {
+          query = query.eq('content_type', type);
+        }
+        if (categoryId && categoryId !== 'all') {
+          query = query.eq('category_id', categoryId);
+        }
+        if (search) {
+          const q = search.trim();
+          query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
+        }
+        query = query.order('updated_at', { ascending: false });
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
 
-    // RBAC filter: Authors only see their own contents
+        const { data, count, error } = await query;
+        if (!error && data) {
+          const items = await Promise.all(data.map(c => this.populateContentAsync(c)));
+          const total = typeof count === 'number' ? count : items.length;
+          return { contents: items, total, totalPages: Math.ceil(total / limit) || 1, page };
+        }
+      } catch (e) {}
+    }
+
+    let list = [...this.memoryData.contents];
     if (user.role === 'author') {
       list = list.filter(c => c.author_id === user.id);
     }
-
     if (status && status !== 'all') {
       list = list.filter(c => c.status === status);
     }
@@ -497,39 +838,43 @@ class DatabaseManager {
       );
     }
 
-    // Sort latest updated first
     list.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
 
     const total = list.length;
     const start = (page - 1) * limit;
     const items = list.slice(start, start + limit).map(c => this.populateContent(c));
-    return { contents: items, total, totalPages: Math.ceil(total / limit), page };
+    return { contents: items, total, totalPages: Math.ceil(total / limit) || 1, page };
   }
 
   async getContentById(id) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('contents').select('*').eq('id', id).single();
+        if (!error && data) {
+          return await this.populateContentAsync(data);
+        }
+      } catch (e) {}
+    }
     const item = this.memoryData.contents.find(c => c.id === id);
     if (!item) return null;
     return this.populateContent(item);
   }
 
   async getContentBySlug(slug) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('contents').select('*').eq('slug', slug).single();
+        if (!error && data) {
+          return await this.populateContentAsync(data);
+        }
+      } catch (e) {}
+    }
     const item = this.memoryData.contents.find(c => c.slug === slug);
     if (!item) return null;
     return this.populateContent(item);
   }
 
-  populateContent(content) {
-    const author = this.memoryData.profiles.find(p => p.id === content.author_id);
-    const category = this.memoryData.categories.find(c => c.id === content.category_id);
-    return {
-      ...content,
-      author: author ? { id: author.id, full_name: author.full_name, email: author.email, role: author.role } : null,
-      category: category ? { id: category.id, name: category.name, slug: category.slug } : null
-    };
-  }
-
   async createContent(contentData, user) {
-    // Determine status: Authors can only create 'draft'
     let status = 'draft';
     if (user.role === 'admin' || user.role === 'editor') {
       if (contentData.status && ['draft', 'published', 'pending_review'].includes(contentData.status)) {
@@ -540,7 +885,6 @@ class DatabaseManager {
     const now = new Date().toISOString();
     const id = uuidv4();
 
-    // Verify slug uniqueness
     let slug = contentData.slug;
     const existingSlug = this.memoryData.contents.find(c => c.slug === slug);
     if (existingSlug) {
@@ -568,13 +912,34 @@ class DatabaseManager {
       updated_at: now
     };
 
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await this.ensureProfileInSupabase(user);
+        if (contentData.category_id) {
+          await this.ensureCategoryInSupabase(contentData.category_id);
+        }
+        await supabaseAdmin.from('contents').insert([newContent]);
+      } catch (e) {
+        console.warn('[Supabase] Content create sync note:', e.message);
+      }
+    }
+
     this.memoryData.contents.unshift(newContent);
     this.save();
     return this.populateContent(newContent);
   }
 
   async updateContent(id, updates, user) {
-    const content = this.memoryData.contents.find(c => c.id === id);
+    let content = this.memoryData.contents.find(c => c.id === id);
+    if (!content && isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('contents').select('*').eq('id', id).single();
+        if (!error && data) {
+          content = data;
+          this.memoryData.contents.unshift(content);
+        }
+      } catch (e) {}
+    }
     if (!content) throw new Error('Content not found.');
 
     // RBAC check
@@ -585,7 +950,6 @@ class DatabaseManager {
       if (content.status === 'published') {
         throw new Error('Forbidden: Published content cannot be edited directly by authors. Contact an editor.');
       }
-      // If author edits, status can only be 'draft' or 'pending_review'
       if (updates.status && updates.status === 'published') {
         throw new Error('Forbidden: Authors are not permitted to publish content directly.');
       }
@@ -595,7 +959,7 @@ class DatabaseManager {
     if ((updates.title && updates.title !== content.title) || (updates.body && updates.body !== content.body)) {
       const currentVersions = this.memoryData.content_versions.filter(v => v.content_id === id);
       const versionNum = currentVersions.length + 1;
-      this.memoryData.content_versions.unshift({
+      const versionRecord = {
         id: uuidv4(),
         content_id: id,
         edited_by: user.id,
@@ -603,7 +967,16 @@ class DatabaseManager {
         previous_body: content.body,
         version_number: versionNum,
         created_at: new Date().toISOString()
-      });
+      };
+      this.memoryData.content_versions.unshift(versionRecord);
+      if (isSupabaseConfigured && supabaseAdmin) {
+        try {
+          await this.ensureProfileInSupabase(user);
+          await supabaseAdmin.from('content_versions').insert([versionRecord]);
+        } catch (e) {
+          console.warn('[Supabase] Version record save note:', e.message);
+        }
+      }
     }
 
     // Handle slug change uniqueness
@@ -622,15 +995,34 @@ class DatabaseManager {
 
     updates.updated_at = new Date().toISOString();
 
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        if (updates.category_id) {
+          await this.ensureCategoryInSupabase(updates.category_id);
+        }
+        await supabaseAdmin.from('contents').update(updates).eq('id', id);
+      } catch (e) {
+        console.warn('[Supabase] Content update sync note:', e.message);
+      }
+    }
+
     Object.assign(content, updates);
     this.save();
     return this.populateContent(content);
   }
 
   async deleteContent(id, user) {
-    const index = this.memoryData.contents.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Content not found.');
-    const content = this.memoryData.contents[index];
+    let index = this.memoryData.contents.findIndex(c => c.id === id);
+    let content = index !== -1 ? this.memoryData.contents[index] : null;
+
+    if (!content && isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('contents').select('*').eq('id', id).single();
+        if (!error && data) content = data;
+      } catch (e) {}
+    }
+
+    if (!content) throw new Error('Content not found.');
 
     // RBAC check: Authors can only delete their own drafts
     if (user.role === 'author') {
@@ -642,13 +1034,42 @@ class DatabaseManager {
       }
     }
 
-    const [deleted] = this.memoryData.contents.splice(index, 1);
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('content_versions').delete().eq('content_id', id);
+        await supabaseAdmin.from('contents').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[Supabase] Content delete sync note:', e.message);
+      }
+    }
+
+    if (index !== -1) {
+      this.memoryData.contents.splice(index, 1);
+    }
     this.save();
-    return deleted;
+    return content;
   }
 
   // --- CONTENT VERSIONS ---
   async getContentVersions(contentId) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('content_versions')
+          .select('*')
+          .eq('content_id', contentId)
+          .order('version_number', { ascending: false });
+        if (!error && data && data.length > 0) {
+          return data.map(v => {
+            const editor = this.memoryData.profiles.find(p => p.id === v.edited_by);
+            return {
+              ...v,
+              editor: editor ? { id: editor.id, full_name: editor.full_name, email: editor.email } : null
+            };
+          });
+        }
+      } catch (e) {}
+    }
+
     const versions = this.memoryData.content_versions
       .filter(v => v.content_id === contentId)
       .sort((a, b) => b.version_number - a.version_number);
@@ -664,6 +1085,27 @@ class DatabaseManager {
 
   // --- MEDIA ---
   async getAllMedia({ page = 1, limit = 50 } = {}) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        const { data, count, error } = await supabaseAdmin.from('media')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(from, to);
+        if (!error && data) {
+          const items = data.map(m => {
+            const uploader = this.memoryData.profiles.find(p => p.id === m.uploaded_by);
+            return {
+              ...m,
+              uploader: uploader ? { id: uploader.id, full_name: uploader.full_name } : null
+            };
+          });
+          return { media: items, total: count || items.length };
+        }
+      } catch (e) {}
+    }
+
     const total = this.memoryData.media.length;
     const start = (page - 1) * limit;
     const items = this.memoryData.media
@@ -679,6 +1121,12 @@ class DatabaseManager {
   }
 
   async getMediaById(id) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from('media').select('*').eq('id', id).single();
+        if (!error && data) return data;
+      } catch (e) {}
+    }
     return this.memoryData.media.find(m => m.id === id) || null;
   }
 
@@ -692,23 +1140,43 @@ class DatabaseManager {
       uploaded_by,
       created_at: new Date().toISOString()
     };
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        if (uploaded_by) await this.ensureProfileInSupabase(uploaded_by);
+        await supabaseAdmin.from('media').insert([item]);
+      } catch (e) {
+        console.warn('[Supabase] Media insert note:', e.message);
+      }
+    }
+
     this.memoryData.media.unshift(item);
     this.save();
     return item;
   }
 
   async deleteMedia(id, user) {
-    const index = this.memoryData.media.findIndex(m => m.id === id);
-    if (index === -1) throw new Error('Media asset not found.');
-    const media = this.memoryData.media[index];
+    const media = await this.getMediaById(id);
+    if (!media) throw new Error('Media asset not found.');
 
     if (user.role === 'author' && media.uploaded_by !== user.id) {
       throw new Error('Forbidden: You can only delete your own uploaded media.');
     }
 
-    const [deleted] = this.memoryData.media.splice(index, 1);
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('media').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[Supabase] Media delete note:', e.message);
+      }
+    }
+
+    const index = this.memoryData.media.findIndex(m => m.id === id);
+    if (index !== -1) {
+      this.memoryData.media.splice(index, 1);
+    }
     this.save();
-    return deleted;
+    return media;
   }
 
   // --- ACTIVITY LOGS ---
@@ -722,8 +1190,17 @@ class DatabaseManager {
       description,
       created_at: new Date().toISOString()
     };
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        if (user_id) await this.ensureProfileInSupabase(user_id);
+        await supabaseAdmin.from('activity_logs').insert([log]);
+      } catch (e) {
+        // Silently skip if table not created
+      }
+    }
+
     this.memoryData.activity_logs.unshift(log);
-    // Keep max 1000 logs
     if (this.memoryData.activity_logs.length > 1000) {
       this.memoryData.activity_logs.pop();
     }
@@ -732,6 +1209,35 @@ class DatabaseManager {
   }
 
   async getActivityLogs({ page = 1, limit = 30, action, userId } = {}) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin.from('activity_logs').select('*', { count: 'exact' });
+        if (action && action !== 'all') {
+          query = query.eq('action', action);
+        }
+        if (userId && userId !== 'all') {
+          query = query.eq('user_id', userId);
+        }
+        query = query.order('created_at', { ascending: false });
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
+
+        const { data, count, error } = await query;
+        if (!error && data) {
+          const items = data.map(l => {
+            const user = this.memoryData.profiles.find(p => p.id === l.user_id);
+            return {
+              ...l,
+              user: user ? { id: user.id, full_name: user.full_name, email: user.email, role: user.role } : null
+            };
+          });
+          const total = typeof count === 'number' ? count : items.length;
+          return { logs: items, total, totalPages: Math.ceil(total / limit) || 1, page };
+        }
+      } catch (e) {}
+    }
+
     let list = [...this.memoryData.activity_logs];
     if (action && action !== 'all') {
       list = list.filter(l => l.action === action);
@@ -748,11 +1254,69 @@ class DatabaseManager {
         user: user ? { id: user.id, full_name: user.full_name, email: user.email, role: user.role } : null
       };
     });
-    return { logs: items, total, totalPages: Math.ceil(total / limit), page };
+    return { logs: items, total, totalPages: Math.ceil(total / limit) || 1, page };
   }
 
   // --- DASHBOARD STATS ---
   async getDashboardStats(user) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const isAuthor = user.role === 'author';
+        let contentsQuery = supabaseAdmin.from('contents').select('id, status, content_type, author_id');
+        if (isAuthor) {
+          contentsQuery = contentsQuery.eq('author_id', user.id);
+        }
+        const { data: contentsData, error: cntErr } = await contentsQuery;
+
+        if (!cntErr && contentsData) {
+          const totalContent = contentsData.length;
+          const publishedCount = contentsData.filter(c => c.status === 'published').length;
+          const draftsCount = contentsData.filter(c => c.status === 'draft').length;
+          const pendingCount = contentsData.filter(c => c.status === 'pending_review').length;
+          const rejectedCount = contentsData.filter(c => c.status === 'rejected').length;
+
+          const byType = {
+            article: contentsData.filter(c => c.content_type === 'article').length,
+            news: contentsData.filter(c => c.content_type === 'news').length,
+            announcement: contentsData.filter(c => c.content_type === 'announcement').length,
+            event: contentsData.filter(c => c.content_type === 'event').length
+          };
+
+          const { count: totalUsers } = await supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true });
+          const { count: activeUsers } = await supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('is_active', true);
+
+          let recentQuery = supabaseAdmin.from('contents').select('*').order('updated_at', { ascending: false }).limit(5);
+          if (isAuthor) recentQuery = recentQuery.eq('author_id', user.id);
+          const { data: recentContents } = await recentQuery;
+          const recentlyUpdated = recentContents ? await Promise.all(recentContents.map(c => this.populateContentAsync(c))) : [];
+
+          const { data: recentLogsData } = await supabaseAdmin.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(8);
+          const recentActivity = (recentLogsData || []).map(l => {
+            const u = this.memoryData.profiles.find(p => p.id === l.user_id);
+            return {
+              ...l,
+              user: u ? { id: u.id, full_name: u.full_name, email: u.email, role: u.role } : null
+            };
+          });
+
+          return {
+            stats: {
+              totalContent,
+              publishedCount,
+              draftsCount,
+              pendingCount,
+              rejectedCount,
+              totalUsers: totalUsers || this.memoryData.profiles.length,
+              activeUsers: activeUsers || this.memoryData.profiles.filter(p => p.is_active).length
+            },
+            byType,
+            recentlyUpdated,
+            recentActivity
+          };
+        }
+      } catch (e) {}
+    }
+
     const contents = this.memoryData.contents;
     const isAuthor = user.role === 'author';
     const relevantContents = isAuthor ? contents.filter(c => c.author_id === user.id) : contents;
@@ -766,7 +1330,6 @@ class DatabaseManager {
     const totalUsers = this.memoryData.profiles.length;
     const activeUsers = this.memoryData.profiles.filter(p => p.is_active).length;
 
-    // Content by type
     const byType = {
       article: relevantContents.filter(c => c.content_type === 'article').length,
       news: relevantContents.filter(c => c.content_type === 'news').length,
@@ -774,13 +1337,11 @@ class DatabaseManager {
       event: relevantContents.filter(c => c.content_type === 'event').length
     };
 
-    // Recently updated content (up to 5)
     const recentlyUpdated = [...relevantContents]
       .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())
       .slice(0, 5)
       .map(c => this.populateContent(c));
 
-    // Recent activities (up to 8)
     const recentActivity = [...this.memoryData.activity_logs]
       .slice(0, 8)
       .map(l => {

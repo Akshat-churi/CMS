@@ -297,8 +297,12 @@ const runTests = async () => {
   }
 };
 
-runTests().catch(err => {
-  console.error('\n❌ Test suite execution failed:', err);
-  process.exit(1);
-});
+runTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch(err => {
+    console.error('\n❌ Test suite execution failed:', err);
+    process.exit(1);
+  });
 

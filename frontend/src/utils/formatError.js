@@ -42,3 +42,4 @@ export const formatErrorMessage = (err, fallback = 'An unexpected error occurred
 };
 
 export default formatErrorMessage;
+
