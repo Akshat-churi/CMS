@@ -347,7 +347,7 @@ VALUES
         now()
     ),
     (
-        'n1111111-1111-4111-8111-111111111111',
+        'b1111111-1111-4111-8111-111111111111',
         'ContentPilot AI Version 1.0 Launched for Enterprise Editorial Workflows',
         'contentpilot-ai-version-1-launched',
         'ContentPilot launches its robust Phase 1 core CMS featuring dynamic multi-role publishing and media governance.',
@@ -364,7 +364,7 @@ VALUES
         now()
     ),
     (
-        'm1111111-1111-4111-8111-111111111111',
+        'd1111111-1111-4111-8111-111111111111',
         'Scheduled System Maintenance: Database Performance Optimization',
         'scheduled-system-maintenance-february',
         'Notice regarding upcoming infrastructure scaling and database indexing maintenance window.',

@@ -138,7 +138,7 @@ const getInitialSeed = () => {
         updated_at: now
       },
       {
-        id: 'n1111111-1111-4111-8111-111111111111',
+        id: 'b1111111-1111-4111-8111-111111111111',
         title: 'ContentPilot AI Version 1.0 Launched for Enterprise Editorial Workflows',
         slug: 'contentpilot-ai-version-1-launched',
         description: 'ContentPilot launches its robust Phase 1 core CMS featuring dynamic multi-role publishing and media governance.',
@@ -157,7 +157,7 @@ const getInitialSeed = () => {
         updated_at: now
       },
       {
-        id: 'm1111111-1111-4111-8111-111111111111',
+        id: 'd1111111-1111-4111-8111-111111111111',
         title: 'Scheduled System Maintenance: Database Performance Optimization',
         slug: 'scheduled-system-maintenance-february',
         description: 'Notice regarding upcoming infrastructure scaling and database indexing maintenance window.',
